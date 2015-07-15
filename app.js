@@ -54,7 +54,7 @@ It gives this error:
   self.client.queryDocuments(self.plantsCollection._self, querySpec).toArray
                                                     ^TypeError: Cannot read property '_self' of null
 
-My second attempt is below. The way it's set up, it should output ---- followed by whatever is returned...
+My second attempt is below. The way it's set up, it should output '----' followed by whatever is returned...
 but it doesn't output anything. WHy?
 
 Third attempt: using .then();
