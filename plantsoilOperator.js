@@ -122,18 +122,7 @@ PlantSoilOperator.prototype = {
 
     //if 0 results, they are incompatible; if 1 result, they are compatible
     self.client.queryDocuments(self.plantsCollection._self, querySpec).toArray(function(err, results) {
-      if (err) {
-        callback(err);
-      }
-
-      if (!err && results.length === 0) {
-        //incompatible
-        callback(null, 0);
-      }
-      if (!err && results.length == 1) {
-        //compatible
-        callback(null, 1);
-      }
+      callback(err, results.length !== 0);
     });
   }
 

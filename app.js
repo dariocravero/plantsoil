@@ -39,7 +39,7 @@ app.use(logger('dev'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname + '/public')));
 
 // PlantSoil App
 var docDbClient = new DocumentDBClient(config.host, {
@@ -60,53 +60,37 @@ plantsoilOperator.init(function(err) {
 // single page app functions
 
 // handles request for lists of plants and soils
-app.get('/', function(req, res) {
-    var data = [];
-    data[0] = []; //plants
-    data[1] = []; //soils
-
+app.get('/service', function(req, res) {
     //get list of plants, store in var data
-    var pushPlants = function(callback) {
+    var plantsPromise = new Promise(function(resolve, reject) {
       plantsoilOperator.getPlants(function(err, results) {
-        if (err) {
-          callback(err);
-        }
-
-        //iterate through results object, store each plant in data[0]
-        for (var i = 0; i < results.length; i++) {
-          data[0].push(results[i]);
-        }
-
-        callback(null);
+        err ? reject(err) : resolve({plants: results});
       });
-    };
+    });
 
     //get list of soils, store in var data
-    var pushSoils = function(callback) {
+    var soilsPromise = new Promise(function(resolve, reject) {
       plantsoilOperator.getSoils(function(err, results) {
-        if (err) {
-          callback(err);
-        }
-
-        //iterate through results object, store each soil in data[1]
-        for (var i = 0; i < results.length; i++) {
-          data[1].push(results[i]);
-        }
-        console.log(data);
-        callback(null);
+        err ? reject(err) : resolve({soils: results});
       });
-    };
+    });
 
-    //execute in parallel, write response to client
-    async.parallel([pushPlants, pushSoils], function () {
+    Promise.all([plantsPromise, soilsPromise]).then(function(values) {
+      console.log('values', values)
+      var data = values.reduce(function(ret, cur) {
+        Object.keys(cur).forEach(function(key) {
+          ret[key] = cur[key];
+        });
+        return ret;
+      }, {});
       console.log('GET / : writing response now...');
       res.setHeader('Cache-Control', 'no-cache');
-      res.JSON(data);
+      res.json(data);
     });
 });
 
 //handles plantsoilMatchForm submission from user, returns binary success or failure
-app.post('/', function(req, res) {
+app.post('/service', function(req, res) {
   console.log('POST / : received request...');
   console.log(req.body);
 
@@ -118,7 +102,7 @@ app.post('/', function(req, res) {
     }
     console.log('POST / : writing response...', result);
     res.setHeader('Cache-Control', 'no-cache');
-    res.send(result);
+    res.json({goodMatch: result});
   });
 
 });
