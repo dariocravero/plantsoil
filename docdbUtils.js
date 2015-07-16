@@ -41,7 +41,7 @@ var DocDBUtils = {
       callback(null, results[0]);
     });
   },
-  
+
 };
 
 module.exports = DocDBUtils;

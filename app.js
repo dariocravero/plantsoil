@@ -9,8 +9,11 @@ var favicon = require('serve-favicon');
 var logger = require('morgan');
 var cookieParser = require('cookie-parser');
 var bodyParser = require('body-parser');
+var async = require('async');
+var http = require('http');
 
-//database configuration
+
+//DocumentDB configuration
 var config = {};
 config.host = process.env.HOST || "https://plantsoil.documents.azure.com:443/";
 config.authKey = process.env.AUTH_KEY || "Gr8ptbHRaml0I+zk7RgDwoBRd/4TV7jq/Zr7AzCUYNdquljWzN2HPnPpl/yhlfAvCoXF4iKRP1umiCSCZ5SOHQ==";
@@ -22,17 +25,20 @@ config.soilsCollectionId = "soils";
 // - var users = require('./routes/users');
 
 var app = express();
+app.set('port', (process.env.PORT || 3001));
 
+//NOTE: kept getting error that I didn't specify a view engine, tried adding the lines below, didn't work...
+//NOTE: The Facebook React tutorial I used doesn't specify a view engine, shouldn't be necessary.
 // view engine setup
-// - app.set('views', path.join(__dirname, 'views'));
-// - app.set('view engine', 'jade');
+//app.set('/', path.join(__dirname + '/'));
+//app.engine('html', require('ejs').renderFile);
+//app.set('view engine', 'html');
 
 
 app.use(logger('dev'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
-// - app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(path.join(__dirname)));
 
 // PlantSoil App
@@ -41,65 +47,81 @@ var docDbClient = new DocumentDBClient(config.host, {
 });
 var plantsoilOperator = new PlantSoilOperator(docDbClient, config.databaseId, config.plantsCollectionId, config.soilsCollectionId);
 
-/*
-plantsoilOperator initializes by getting plants and soils collections
-and storing them as self.plantsCollection, etc. and outputs them to the console successfully
-
-I now am trying to test getPlants function by getting it to output the results
-First attempt:
-plantsoilOperator.init();
-plantsoilOperator.getPlants();
-returns that self.plantsCollection is null for some reason... I don't know why.
-It gives this error:
-  self.client.queryDocuments(self.plantsCollection._self, querySpec).toArray
-                                                    ^TypeError: Cannot read property '_self' of null
-
-My second attempt is below. The way it's set up, it should output '----' followed by whatever is returned...
-but it doesn't output anything. WHy?
-
-Third attempt: using .then();
-plantsoilOperator.init().then(plantsoilOperator.getPlants());
-resulted in same issue...
-*/
-
 
 plantsoilOperator.init(function(err) {
   if (err) {
     console.log(err);
   }
-  plantsoilOperator.getPlants(function(err, results) {
-    if (err) {
-      console.log(err);
-    }
-    console.log('------------');
-    console.log(results);
-  });
 });
-
 
 // - app.use('/', routes);
 // - app.use('/users', users);
 
-//single page app functions
-/*
+// single page app functions
+
+// handles request for lists of plants and soils
 app.get('/', function(req, res) {
-  fs.readFile('comments.json', function(err, data) {
-    res.setHeader('Cache-Control', 'no-cache');
-    res.json(JSON.parse(data));
-  });
+    var data = [];
+    data[0] = []; //plants
+    data[1] = []; //soils
+
+    //get list of plants, store in var data
+    var pushPlants = function(callback) {
+      plantsoilOperator.getPlants(function(err, results) {
+        if (err) {
+          callback(err);
+        }
+
+        //iterate through results object, store each plant in data[0]
+        for (var i = 0; i < results.length; i++) {
+          data[0].push(results[i]);
+        }
+
+        callback(null);
+      });
+    };
+
+    //get list of soils, store in var data
+    var pushSoils = function(callback) {
+      plantsoilOperator.getSoils(function(err, results) {
+        if (err) {
+          callback(err);
+        }
+
+        //iterate through results object, store each soil in data[1]
+        for (var i = 0; i < results.length; i++) {
+          data[1].push(results[i]);
+        }
+        console.log(data);
+        callback(null);
+      });
+    };
+
+    //execute in parallel, write response to client
+    async.parallel([pushPlants, pushSoils], function () {
+      console.log('GET / : writing response now...');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.JSON(data);
+    });
 });
 
+//handles plantsoilMatchForm submission from user, returns binary success or failure
 app.post('/', function(req, res) {
-  fs.readFile('comments.json', function(err, data) {
-    var comments = JSON.parse(data);
-    comments.push(req.body);
-    fs.writeFile('comments.json', JSON.stringify(comments, null, 4), function(err) {
-      res.setHeader('Cache-Control', 'no-cache');
-      res.json(comments);
-    });
+  console.log('POST / : received request...');
+  console.log(req.body);
+
+  var plantId = req.body.plant;
+  var soilId = req.body.soil;
+  plantsoilOperator.checkIfCompatible(plantId, soilId, function(err, result) {
+    if (err) {
+      console.log(err);
+    }
+    console.log('POST / : writing response...', result);
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(result);
   });
+
 });
-*/
 
 
 // catch 404 and forward to error handler
@@ -116,10 +138,7 @@ app.use(function(req, res, next) {
 if (app.get('env') === 'development') {
   app.use(function(err, req, res, next) {
     res.status(err.status || 500);
-    res.render('error', {
-      message: err.message,
-      error: err
-    });
+    next(err);
   });
 }
 
@@ -127,11 +146,11 @@ if (app.get('env') === 'development') {
 // no stacktraces leaked to user
 app.use(function(err, req, res, next) {
   res.status(err.status || 500);
-  res.render('error', {
-    message: err.message,
-    error: {}
-  });
+  next(err);
 });
 
+app.listen(app.get('port'), function() {
+  console.log('Server started: http://localhost:', app.get('port'));
+});
 
 module.exports = app;

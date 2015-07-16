@@ -1,5 +1,6 @@
 var DocumentDBClient = require('documentdb').DocumentClient;
 var docdbUtils = require('./docdbUtils');
+var async = require('async');
 
 function PlantSoilOperator(documentDBClient, databaseId, plantsCollectionId, soilsCollectionId ) {
   this.client = documentDBClient;
@@ -25,24 +26,46 @@ PlantSoilOperator.prototype = {
 
       self.database = db;
 
-      docdbUtils.getCollection(self.client, self.database._self, self.plantsCollectionId, function(err, coll) {
-        if (err) {
-          console.log(err);
+      async.series([
+        function(callback) {
+          docdbUtils.getCollection(self.client, self.database._self, self.plantsCollectionId, function(err, coll) {
+            if (err) {
+              callback(err);
+            }
+
+            self.plantsCollection = coll;
+            console.log('Here37', self.plantsCollection);
+            callback(null);
+          });
+
+          //callback(null);
+        },
+
+        function(callback) {
+          docdbUtils.getCollection(self.client, self.database._self, self.soilsCollectionId, function(err, coll) {
+            if (err) {
+              callback(err);
+            }
+
+            self.soilsCollection = coll;
+            console.log('Here51', self.soilsCollection);
+            callback(null);
+          });
+
+          //callback(null);
+        },
+      ],
+        function(err, results) {
+          if (err) {
+            callback(err);
+          }
+          console.log('HERE');
         }
+      );
 
-        self.plantsCollection = coll;
-        console.log(self.plantsCollection);
-      });
-
-      docdbUtils.getCollection(self.client, self.database._self, self.soilsCollectionId, function(err, coll) {
-        if (err) {
-          callback(err);
-        }
-
-        self.soilsCollection = coll;
-        console.log(self.soilsCollection);
-      });
+      //callback(null);
     });
+
   },
 
   //get list of plants for user to choose from
@@ -57,7 +80,7 @@ PlantSoilOperator.prototype = {
       if (err) {
         callback(err);
       } else {
-        console.log(results);
+        //console.log(results);
         callback(null, results);
       }
     });
@@ -83,7 +106,7 @@ PlantSoilOperator.prototype = {
   //checks if user submitted plant and soil are compatible with each other
   checkIfCompatible: function(userPlant, userSoil, callback) {
     var self = this;
-    
+
     var querySpec = {
       query: 'SELECT {"Plant": p.id, "Soil": s.id} FROM Plants p JOIN s IN p.compatibleSoils WHERE p.id=@userPlantId AND s.id=@userSoilId',
       parameters: [{
@@ -98,17 +121,18 @@ PlantSoilOperator.prototype = {
     };
 
     //if 0 results, they are incompatible; if 1 result, they are compatible
-    self.client.queryDocuments(self.soilsCollection._self, querySpec).toArray(function(err, results) {
+    self.client.queryDocuments(self.plantsCollection._self, querySpec).toArray(function(err, results) {
       if (err) {
         callback(err);
       }
 
       if (!err && results.length === 0) {
         //incompatible
-        callback(false, results[0]);
-      } else {
+        callback(null, 0);
+      }
+      if (!err && results.length == 1) {
         //compatible
-        callback(true, results[0]);
+        callback(null, 1);
       }
     });
   }
